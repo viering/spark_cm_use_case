@@ -1,0 +1,1 @@
+nohup /home/dspadmin/git/spark_cm_use_case/resource-managers/session-cm/start_crash_query.sh 2>1 &

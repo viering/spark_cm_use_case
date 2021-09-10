@@ -231,6 +231,7 @@ private[spark] class SparkSubmit extends Logging {
     val clusterManager: Int = args.master match {
       case "yarn" => YARN
       case m if m.startsWith("spark") => STANDALONE
+      case m if m.startsWith("sessioncm") => SESSIONCM
       case m if m.startsWith("mesos") => MESOS
       case m if m.startsWith("k8s") => KUBERNETES
       case m if m.startsWith("local") => LOCAL
@@ -299,6 +300,7 @@ private[spark] class SparkSubmit extends Logging {
     val isKubernetesClient = clusterManager == KUBERNETES && deployMode == CLIENT
     val isKubernetesClusterModeDriver = isKubernetesClient &&
       sparkConf.getBoolean("spark.kubernetes.submitInDriver", false)
+    val isSessionCM : Boolean = clusterManager == SESSIONCM && deployMode == CLUSTER
 
     if (!isMesosCluster && !isStandAloneCluster) {
       // Resolve maven dependencies if there are any and add classpath to jars. Add them to py-files
@@ -710,6 +712,15 @@ private[spark] class SparkSubmit extends Logging {
       setRMPrincipal(sparkConf)
     }
 
+    if (isSessionCM) {
+      childMainClass = SESSION_CM_SUBMIT_CLASS
+      childArgs += args.mainClass
+      childArgs ++= args.childArgs
+      if (args.driverExtraClassPath != null) {
+        childClasspath ++= args.driverExtraClassPath.split(":")
+    }
+    }
+
     // In yarn-cluster mode, use yarn.Client as a wrapper around the user class
     if (isYarnCluster) {
       childMainClass = YARN_CLUSTER_SUBMIT_CLASS
@@ -958,7 +969,8 @@ object SparkSubmit extends CommandLineUtils with Logging {
   private val MESOS = 4
   private val LOCAL = 8
   private val KUBERNETES = 16
-  private val ALL_CLUSTER_MGRS = YARN | STANDALONE | MESOS | LOCAL | KUBERNETES
+  private val SESSIONCM = 32
+  private val ALL_CLUSTER_MGRS = YARN | STANDALONE | MESOS | LOCAL | KUBERNETES | SESSIONCM
 
   // Deploy modes
   private val CLIENT = 1
@@ -975,6 +987,7 @@ object SparkSubmit extends CommandLineUtils with Logging {
   private val CLASS_NOT_FOUND_EXIT_STATUS = 101
 
   // Following constants are visible for testing.
+  private[deploy] val SESSION_CM_SUBMIT_CLASS = "org.apache.spark.deploy.sessioncm.SessionCMModeLauncher"
   private[deploy] val YARN_CLUSTER_SUBMIT_CLASS =
     "org.apache.spark.deploy.yarn.YarnClusterApplication"
   private[deploy] val REST_CLUSTER_SUBMIT_CLASS = classOf[RestSubmissionClientApp].getName()
@@ -1183,7 +1196,7 @@ private[spark] object SparkSubmitUtils {
     }.mkString(",")
   }
 
-  /** Adds the given maven coordinates to Ivy's module descriptor. */
+  /** Adds the given maven coordinates to Ivy's module desscriptor. */
   def addDependenciesToIvy(
       md: DefaultModuleDescriptor,
       artifacts: Seq[MavenCoordinate],
